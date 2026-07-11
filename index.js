@@ -27,7 +27,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const PANEL_CHANNEL_ID = "1525147897744720033";
 const STAFF_ROLE_ID = "1525147649723072663";
-const VERIFIED_ROLE_ID = "1359231814547275966"; // ← Yahan Verified Role ID daal do
+const VERIFIED_ROLE_ID = "1359231814547275966";
 
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL;
 const GOODBYE_CHANNEL_ID = process.env.GOODBYE_CHANNEL;
@@ -63,7 +63,7 @@ let warnings = {};
 let antiSpamChannels = new Set();
 let antiLinkChannels = new Set();
 let antiMentionChannels = new Set();
-let activeGiveaways = new Map(); // Giveaway storage
+let activeGiveaways = new Map();
 
 // Anti-ping configuration
 const ANTI_PING_MEMBERS = new Set();
@@ -91,7 +91,7 @@ async function sendLog(guild, channelId, embed) {
     if (channel) channel.send({ embeds: [embed] }).catch(() => {});
 }
 
-// Time Parser (1m, 2h, 1d etc.)
+// Time Parser
 function parseDuration(durationStr) {
     const timeUnits = { m: 60000, h: 3600000, d: 86400000 };
     const match = durationStr.match(/^(\d+)([mhd])$/i);
@@ -135,14 +135,12 @@ const commands = [
     new SlashCommandBuilder().setName("msg").setDescription("Send formatted embed message").addStringOption(o => o.setName("channel_id").setDescription("Channel ID").setRequired(true)),
     new SlashCommandBuilder().setName("serverinfo").setDescription("Shows server information"),
     new SlashCommandBuilder().setName("memberinfo").setDescription("Shows member information").addUserOption(o => o.setName("user").setDescription("User").setRequired(false)),
-    // New Role Commands
     new SlashCommandBuilder().setName("giverole").setDescription("Give role to user or all")
         .addStringOption(o => o.setName("roleid").setDescription("Role ID").setRequired(true))
         .addStringOption(o => o.setName("target").setDescription("all or user mention/ID").setRequired(true)),
     new SlashCommandBuilder().setName("removerole").setDescription("Remove role from user or all")
         .addStringOption(o => o.setName("roleid").setDescription("Role ID").setRequired(true))
         .addStringOption(o => o.setName("target").setDescription("all or user mention/ID").setRequired(true)),
-    // Giveaway
     new SlashCommandBuilder().setName("giveaway").setDescription("Start a giveaway")
         .addStringOption(o => o.setName("prize").setDescription("Prize for giveaway").setRequired(true))
         .addStringOption(o => o.setName("duration").setDescription("Duration (e.g. 1m, 2h, 1d)").setRequired(true))
@@ -168,12 +166,12 @@ client.on("interactionCreate", async (interaction) => {
             if (cmd === "ticketpanel") {
                 if (interaction.channelId !== PANEL_CHANNEL_ID)
                     return interaction.reply({ content: "Wrong channel ♻️", flags: MessageFlags.Ephemeral });
-              
+             
                 const embed = new EmbedBuilder()
                     .setTitle("MIDNIGHT SOCIETY")
                     .setColor(0x2b2d31)
                     .setDescription("👋 **Welcome to MIDNIGHT SOCIETY Support!**\nPlease select the appropriate ticket category below. 🎫\n\n📌 **Before opening a ticket:**\n• ✅ Make sure your issue has not already been resolved.\n• 🚫 Do not open multiple tickets for the same issue.\n• 📝 Provide clear and complete details.\n• ⏳ Be patient while waiting for support.");
-              
+             
                 const select = new StringSelectMenuBuilder()
                     .setCustomId("ticket_select")
                     .setPlaceholder("🎟️ Select ticket type")
@@ -181,13 +179,12 @@ client.on("interactionCreate", async (interaction) => {
                         { label: "🌐 Other", value: "other" },
                         { label: "🏆 Team Registration", value: "teamreg" }
                     );
-              
+             
                 return interaction.reply({
                     embeds: [embed],
                     components: [new ActionRowBuilder().addComponents(select)]
                 });
             }
-            // === Giveaway ===
             if (cmd === "giveaway") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -217,7 +214,6 @@ client.on("interactionCreate", async (interaction) => {
                 setTimeout(() => endGiveaway(msg.id), durationMs);
                 return interaction.reply({ content: "✅ Giveaway started!", flags: MessageFlags.Ephemeral });
             }
-            // === New: Give Role ===
             if (cmd === "giverole") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -242,7 +238,6 @@ client.on("interactionCreate", async (interaction) => {
                     return interaction.reply(`✅ Role given to ${member.user.tag}`);
                 }
             }
-            // === New: Remove Role ===
             if (cmd === "removerole") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -267,7 +262,6 @@ client.on("interactionCreate", async (interaction) => {
                     return interaction.reply(`✅ Role removed from ${member.user.tag}`);
                 }
             }
-            // Moderation commands (same)
             if (cmd === "kick") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -378,7 +372,7 @@ client.on("interactionCreate", async (interaction) => {
             }
         }
 
-        // ===== MODAL SUBMIT HANDLER =====
+        // MODAL, SELECT MENU, BUTTONS (same as before)
         if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith("modal_msg_")) {
                 const chanId = interaction.customId.replace("modal_msg_", "");
@@ -392,11 +386,10 @@ client.on("interactionCreate", async (interaction) => {
 
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const type = interaction.customId.replace("modal_", "");
-          
+         
             if (await hasOpenTicket(interaction.guild, interaction.user.id, type)) {
                 return interaction.editReply({ content: "❌ You already have an open ticket for this category!" });
             }
-
             const ticketChannel = await interaction.guild.channels.create({
                 name: `${EMOJIS[type] || "🏆"}-${interaction.user.username}`,
                 type: ChannelType.GuildText,
@@ -407,7 +400,6 @@ client.on("interactionCreate", async (interaction) => {
                     { id: STAFF_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
                 ],
             });
-
             let fields = [];
             if (type === "teamreg") {
                 const teamName = interaction.fields.getTextInputValue("team_name");
@@ -425,31 +417,26 @@ client.on("interactionCreate", async (interaction) => {
                     fields.push({ name: f.customId.toUpperCase().replace(/_/g, " "), value: `\`\`\`${f.value || "N/A"}\`\`\`` });
                 });
             }
-
             const embed = new EmbedBuilder()
                 .setColor(0x2b2d31)
                 .setTitle(`Ticket - ${interaction.user.username}`)
                 .addFields(fields)
                 .setFooter({ text: `Opened by ${interaction.user.tag}` })
                 .setTimestamp();
-
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
             );
-
             await ticketChannel.send({
                 content: `<@${interaction.user.id}> <@&${STAFF_ROLE_ID}>\n\n**Your Ticket Is Opened, The Staff Team Will Assist You As Soon as Possible, Till Then Please Wait! <3**`,
                 embeds: [embed],
                 components: [row]
             });
-
             const log = new EmbedBuilder().setColor("#3498DB").setTitle("Ticket Created").addFields({ name: "User", value: interaction.user.tag }, { name: "Channel", value: `<#${ticketChannel.id}>` }, { name: "Type", value: type.toUpperCase() }).setTimestamp();
             await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
             return interaction.editReply(`Ticket Created: ${ticketChannel}`);
         }
 
-        // ===== TICKET SELECT MENU =====
         if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") {
             const type = interaction.values[0];
             const modal = new ModalBuilder().setCustomId(`modal_${type}`).setTitle(`${EMOJIS[type]} ${type.toUpperCase()} FORM`);
@@ -466,7 +453,6 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.showModal(modal);
         }
 
-        // ===== BUTTONS =====
         if (interaction.isButton()) {
             if (interaction.customId === "claim") {
                 if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
@@ -476,7 +462,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
                 return interaction.editReply(`Ticket claimed by <@${interaction.user.id}>`);
             }
-
             if (interaction.customId === "close") {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral });
                 const creator = await getTicketCreator(interaction.channel);
@@ -509,7 +494,6 @@ client.on("interactionCreate", async (interaction) => {
                     components: [reopenRow]
                 });
             }
-
             if (interaction.customId === "reopen") {
                 if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
                     return interaction.reply({ content: "Staff Only!", flags: MessageFlags.Ephemeral });
@@ -521,7 +505,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
                 return interaction.editReply("Ticket Reopened!");
             }
-
             if (interaction.customId === "delete") {
                 if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
                     return interaction.reply({ content: "Staff Only!", flags: MessageFlags.Ephemeral });
@@ -612,19 +595,24 @@ client.on(Events.MessageCreate, async (message) => {
     }
 });
 
+
 // ================= WELCOME / GOODBYE + AUTO ROLE =================
 client.on(Events.GuildMemberAdd, async (member) => {
     if (VERIFIED_ROLE_ID) {
         await member.roles.add(VERIFIED_ROLE_ID).catch(() => {});
     }
+
     if (WELCOME_CHANNEL_ID) {
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
             const embed = new EmbedBuilder()
-                .setTitle("Welcome to Midnight Society!")
-                .setDescription(`Hey <@${member.id}>, welcome! Read the rules and enjoy.`)
+                .setTitle("Welcome to Midnight Society | 2026!")
+                .setColor(0x8B00FF)
+                .setDescription(`Hey ${member}, glad you found us!\nWe are happy to welcome you to Midnight Society.`)
                 .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                .setColor(0x2b2d31);
+                .setImage("https://cdn.discordapp.com/attachments/1525436919557914655/1525446030529794089/ChatGPT_Image_Jul_11_2026_03_17_45_PM.png?ex=6a5369d3&is=6a521853&hm=6c54f6174190b7ed868ff6c83a27a5a56c978c1e92fcc271242e2e2118bc909d&")
+                .setFooter({ text: "Midnight Society | 2026" })
+                .setTimestamp();
             channel.send({ embeds: [embed] });
         }
     }
@@ -650,5 +638,5 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 
 console.log("Bot is ready with Auto Role + Give/Remove Role Commands!");
 
-// ================= BOT LOGIN (Railway ke liye zaroori) =================
+// ================= BOT LOGIN =================
 client.login(TOKEN).catch(console.error);

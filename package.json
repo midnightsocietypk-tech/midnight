@@ -11,6 +11,9 @@
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5"
   },
-  "author": "Baashaa",
-  "license": "ISC"
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

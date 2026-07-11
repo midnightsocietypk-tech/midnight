@@ -165,16 +165,15 @@ client.on("interactionCreate", async (interaction) => {
     try {
         if (interaction.isChatInputCommand()) {
             const cmd = interaction.commandName;
-
             if (cmd === "ticketpanel") {
                 if (interaction.channelId !== PANEL_CHANNEL_ID)
                     return interaction.reply({ content: "Wrong channel ♻️", flags: MessageFlags.Ephemeral });
-               
+              
                 const embed = new EmbedBuilder()
                     .setTitle("MIDNIGHT SOCIETY")
                     .setColor(0x2b2d31)
                     .setDescription("👋 **Welcome to MIDNIGHT SOCIETY Support!**\nPlease select the appropriate ticket category below. 🎫\n\n📌 **Before opening a ticket:**\n• ✅ Make sure your issue has not already been resolved.\n• 🚫 Do not open multiple tickets for the same issue.\n• 📝 Provide clear and complete details.\n• ⏳ Be patient while waiting for support.");
-               
+              
                 const select = new StringSelectMenuBuilder()
                     .setCustomId("ticket_select")
                     .setPlaceholder("🎟️ Select ticket type")
@@ -182,13 +181,12 @@ client.on("interactionCreate", async (interaction) => {
                         { label: "🌐 Other", value: "other" },
                         { label: "🏆 Team Registration", value: "teamreg" }
                     );
-               
+              
                 return interaction.reply({
                     embeds: [embed],
                     components: [new ActionRowBuilder().addComponents(select)]
                 });
             }
-
             // === Giveaway ===
             if (cmd === "giveaway") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
@@ -219,18 +217,14 @@ client.on("interactionCreate", async (interaction) => {
                 setTimeout(() => endGiveaway(msg.id), durationMs);
                 return interaction.reply({ content: "✅ Giveaway started!", flags: MessageFlags.Ephemeral });
             }
-
             // === New: Give Role ===
             if (cmd === "giverole") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
-
                 const roleId = interaction.options.getString("roleid");
                 const target = interaction.options.getString("target");
                 const role = interaction.guild.roles.cache.get(roleId);
-
                 if (!role) return interaction.reply({ content: "❌ Invalid Role ID!", flags: MessageFlags.Ephemeral });
-
                 if (target.toLowerCase() === "all") {
                     const members = await interaction.guild.members.fetch();
                     let count = 0;
@@ -248,18 +242,14 @@ client.on("interactionCreate", async (interaction) => {
                     return interaction.reply(`✅ Role given to ${member.user.tag}`);
                 }
             }
-
             // === New: Remove Role ===
             if (cmd === "removerole") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
-
                 const roleId = interaction.options.getString("roleid");
                 const target = interaction.options.getString("target");
                 const role = interaction.guild.roles.cache.get(roleId);
-
                 if (!role) return interaction.reply({ content: "❌ Invalid Role ID!", flags: MessageFlags.Ephemeral });
-
                 if (target.toLowerCase() === "all") {
                     const members = await interaction.guild.members.fetch();
                     let count = 0;
@@ -277,7 +267,6 @@ client.on("interactionCreate", async (interaction) => {
                     return interaction.reply(`✅ Role removed from ${member.user.tag}`);
                 }
             }
-
             // Moderation commands (same)
             if (cmd === "kick") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers))
@@ -289,7 +278,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`✅ Kicked ${target.user.tag}`);
             }
-
             if (cmd === "ban") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -300,7 +288,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`✅ Banned ${target.user.tag}`);
             }
-
             if (cmd === "mute") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -312,7 +299,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`✅ Muted ${target.user.tag} for ${mins}m`);
             }
-
             if (cmd === "unmute") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -322,7 +308,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`✅ Unmuted ${target.user.tag}`);
             }
-
             if (cmd === "warn") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -334,7 +319,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`⚠️ Warned ${target.user.tag}. Total warnings: ${warnings[key].length}`);
             }
-
             if (cmd === "clear") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -344,7 +328,6 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply({ content: `✅ Deleted ${amount} messages`, flags: MessageFlags.Ephemeral });
             }
-
             if (cmd === "msg") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -354,7 +337,6 @@ client.on("interactionCreate", async (interaction) => {
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
-
             if (cmd === "serverinfo") {
                 const guild = interaction.guild;
                 const embed = new EmbedBuilder()
@@ -369,7 +351,6 @@ client.on("interactionCreate", async (interaction) => {
                     .setThumbnail(guild.iconURL({ dynamic: true }));
                 return interaction.reply({ embeds: [embed] });
             }
-
             if (cmd === "memberinfo") {
                 const member = interaction.options.getMember("user") || interaction.member;
                 const embed = new EmbedBuilder()
@@ -386,7 +367,6 @@ client.on("interactionCreate", async (interaction) => {
                 }
                 return interaction.reply({ embeds: [embed] });
             }
-
             if (["antispam", "antilink", "antimention"].includes(cmd)) {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -412,7 +392,7 @@ client.on("interactionCreate", async (interaction) => {
 
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const type = interaction.customId.replace("modal_", "");
-           
+          
             if (await hasOpenTicket(interaction.guild, interaction.user.id, type)) {
                 return interaction.editReply({ content: "❌ You already have an open ticket for this category!" });
             }
@@ -613,22 +593,18 @@ client.on(Events.MessageCreate, async (message) => {
             .setColor(0x2b2d31);
         return message.channel.send({ embeds: [autoEmbed] });
     }
-
     let content = message.content;
     let modified = false;
-
     message.mentions.members.forEach(member => {
         if (ANTI_PING_MEMBERS.has(member.id)) {
             content = content.replace(new RegExp(`<@!?${member.id}>`, 'g'), "🛡️");
             modified = true;
         }
     });
-
     if (message.mentions.roles.has(ANTI_PING_ROLE_ID)) {
         content = content.replace(new RegExp(`<@&${ANTI_PING_ROLE_ID}>`, 'g'), "🚫");
         modified = true;
     }
-
     if (modified) {
         await message.delete().catch(() => {});
         await message.channel.send({ content: `${message.author} ${content}` });
@@ -641,7 +617,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
     if (VERIFIED_ROLE_ID) {
         await member.roles.add(VERIFIED_ROLE_ID).catch(() => {});
     }
-
     if (WELCOME_CHANNEL_ID) {
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
@@ -674,3 +649,6 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 });
 
 console.log("Bot is ready with Auto Role + Give/Remove Role Commands!");
+
+// ================= BOT LOGIN (Railway ke liye zaroori) =================
+client.login(TOKEN).catch(console.error);

@@ -72,6 +72,7 @@ let invites = new Map(); // Invite Tracker
 // Anti-ping configuration
 const ANTI_PING_MEMBERS = new Set();
 const ANTI_PING_ROLE_ID = "890136671050424340";
+const antiPingAttempts = new Map(); // userId => {count, timestamp}
 
 const client = new Client({
     intents: [
@@ -182,7 +183,6 @@ client.on("interactionCreate", async (interaction) => {
         if (interaction.isChatInputCommand()) {
             const cmd = interaction.commandName;
 
-            // Anti-Ping Command
             if (cmd === "antiping") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
                     return interaction.reply({ content: "❌ Administrator permission required!", flags: MessageFlags.Ephemeral });
@@ -197,9 +197,7 @@ client.on("interactionCreate", async (interaction) => {
                     return interaction.reply({ content: `✅ ${user.tag} removed from anti-ping list.`, flags: MessageFlags.Ephemeral });
                 }
                 if (action === "list") {
-                    const list = ANTI_PING_MEMBERS.size > 0 
-                        ? Array.from(ANTI_PING_MEMBERS).map(id => `<@${id}>`).join("\n")
-                        : "Empty";
+                    const list = ANTI_PING_MEMBERS.size > 0 ? Array.from(ANTI_PING_MEMBERS).map(id => `<@${id}>`).join("\n") : "Empty";
                     return interaction.reply({ content: `**Anti-Ping Members:**\n${list}`, flags: MessageFlags.Ephemeral });
                 }
                 return interaction.reply({ content: "Invalid usage!", flags: MessageFlags.Ephemeral });
@@ -212,7 +210,7 @@ client.on("interactionCreate", async (interaction) => {
                 const embed = new EmbedBuilder()
                     .setTitle("Ticket Panel")
                     .setColor(0x2b2d31)
-                    .setDescription("Experience the best Ticketing Service at Midnight Society! Choose the ticket type from the dropdown below, and our team will promptly assist you.\n\nFor automated delivery use our website below\n🔗 Automated Purchasing")
+                    .setDescription("Experience the best Ticketing Service at Midnight Society! Choose the ticket type from the dropdown below, and our team will promptly assist you.")
                     .setThumbnail(SMALL_IMAGE)
                     .setImage(TICKET_IMAGE)
                     .setFooter({ text: "© Midnight Society | All Rights Reserved." });
@@ -241,7 +239,6 @@ client.on("interactionCreate", async (interaction) => {
                 return interaction.reply({ embeds: [embed] });
             }
 
-            // Baaki saare commands same
             if (cmd === "giveaway") {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
                     return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
@@ -282,10 +279,10 @@ client.on("interactionCreate", async (interaction) => {
                 await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
                 return interaction.reply(`✅ Kicked ${target.user.tag}`);
             }
-            // Baaki commands (ban, mute, giverole, etc.) yahan se copy kar sakte ho purane code se, maine sirf kuch examples rakhe hain
+            // Baaki commands same
         }
 
-        // MODAL, SELECT MENU, BUTTONS
+        // MODAL, SELECT MENU, BUTTONS (same as before)
         if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith("modal_msg_")) {
                 const chanId = interaction.customId.replace("modal_msg_", "");
@@ -298,7 +295,7 @@ client.on("interactionCreate", async (interaction) => {
             }
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const type = interaction.customId.replace("modal_", "");
-        
+       
             if (await hasOpenTicket(interaction.guild, interaction.user.id, type)) {
                 return interaction.editReply({ content: "❌ You already have an open ticket for this category!" });
             }
@@ -444,6 +441,150 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
+// ================= IMPROVED ANTI-PING + SPAM PROTECTION =================
+client.on(Events.MessageCreate, async (message) => {
+    if (message.author.bot) return;
+    if (message.content.toLowerCase() === "!automsg") {
+        const autoEmbed = new EmbedBuilder()
+            .setTitle("Welcome to Midnight Society")
+            .setDescription("Enjoy your stay! Follow the rules and have fun.")
+            .setColor(0x2b2d31);
+        return message.channel.send({ embeds: [autoEmbed] });
+    }
+
+    let shouldBlock = false;
+    message.mentions.members.forEach(member => {
+        if (ANTI_PING_MEMBERS.has(member.id)) shouldBlock = true;
+    });
+    if (message.mentions.roles.has(ANTI_PING_ROLE_ID)) shouldBlock = true;
+
+    if (shouldBlock) {
+        const userId = message.author.id;
+        const now = Date.now();
+        if (!antiPingAttempts.has(userId)) {
+            antiPingAttempts.set(userId, { count: 0, timestamp: now });
+        }
+        const data = antiPingAttempts.get(userId);
+        if (now - data.timestamp > 60000) {
+            data.count = 0;
+            data.timestamp = now;
+        }
+        data.count += 1;
+        await message.delete().catch(() => {});
+
+        if (data.count >= 3) {
+            try {
+                await message.member.timeout(10 * 60000, "Anti-Ping Spam");
+                const log = new EmbedBuilder()
+                    .setColor("#FF0000")
+                    .setTitle("Anti-Ping Timeout")
+                    .addFields({ name: "User", value: message.author.tag }, { name: "Reason", value: "Protected member ping spam" })
+                    .setTimestamp();
+                await sendLog(message.guild, LOG_CHANNELS.MOD, log);
+            } catch (e) {}
+            antiPingAttempts.delete(userId);
+        } else {
+            const remaining = 3 - data.count;
+            await message.channel.send({
+                content: `${message.author}`,
+                embeds: [new EmbedBuilder()
+                    .setColor("#FFA500")
+                    .setDescription(`🚫 Protected staff ko ping mat karo!\n${remaining} try baaki. 3rd try par 10 min timeout.`)]
+            }).then(msg => setTimeout(() => msg.delete().catch(() => {}), 8000));
+        }
+        return;
+    }
+});
+
+// ================= FULL LOGGING SYSTEM =================
+client.on(Events.MessageDelete, async (message) => {
+    if (message.author?.bot || !LOG_CHANNELS.MSG) return;
+    const embed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("Message Deleted")
+        .addFields(
+            { name: "Author", value: `${message.author.tag}` },
+            { name: "Channel", value: `<#${message.channel.id}>` },
+            { name: "Content", value: message.content?.slice(0, 1000) || "No Content" }
+        )
+        .setTimestamp();
+    await sendLog(message.guild, LOG_CHANNELS.MSG, embed);
+});
+
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+    if (oldMessage.author?.bot || !LOG_CHANNELS.MSG) return;
+    if (oldMessage.content === newMessage.content) return;
+    const embed = new EmbedBuilder()
+        .setColor("#FFA500")
+        .setTitle("Message Edited")
+        .addFields(
+            { name: "Author", value: `${oldMessage.author.tag}` },
+            { name: "Channel", value: `<#${oldMessage.channel.id}>` },
+            { name: "Before", value: oldMessage.content?.slice(0, 500) || "No Content" },
+            { name: "After", value: newMessage.content?.slice(0, 500) || "No Content" }
+        )
+        .setTimestamp();
+    await sendLog(oldMessage.guild, LOG_CHANNELS.MSG, embed);
+});
+
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    if (!LOG_CHANNELS.VC) return;
+    const member = newState.member;
+    if (oldState.channelId !== newState.channelId) {
+        let action = "";
+        if (!oldState.channelId) action = "Joined VC";
+        else if (!newState.channelId) action = "Left VC";
+        else action = "Switched VC";
+
+        const embed = new EmbedBuilder()
+            .setColor("#00FFFF")
+            .setTitle("Voice Channel Update")
+            .addFields(
+                { name: "Member", value: member.user.tag },
+                { name: "Action", value: action }
+            )
+            .setTimestamp();
+        await sendLog(newState.guild, LOG_CHANNELS.VC, embed);
+    }
+});
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    // Role Logs
+    if (LOG_CHANNELS.ROLE) {
+        const oldRoles = oldMember.roles.cache;
+        const newRoles = newMember.roles.cache;
+        const added = newRoles.filter(r => !oldRoles.has(r.id));
+        const removed = oldRoles.filter(r => !newRoles.has(r.id));
+
+        if (added.size || removed.size) {
+            const embed = new EmbedBuilder()
+                .setColor("#9B59B6")
+                .setTitle("Role Updated")
+                .addFields(
+                    { name: "Member", value: newMember.user.tag },
+                    { name: "Added", value: added.size ? added.map(r => r.name).join(", ") : "None" },
+                    { name: "Removed", value: removed.size ? removed.map(r => r.name).join(", ") : "None" }
+                )
+                .setTimestamp();
+            await sendLog(newMember.guild, LOG_CHANNELS.ROLE, embed);
+        }
+    }
+
+    // Nickname Logs
+    if (LOG_CHANNELS.NICKNAME && oldMember.nickname !== newMember.nickname) {
+        const embed = new EmbedBuilder()
+            .setColor("#F1C40F")
+            .setTitle("Nickname Changed")
+            .addFields(
+                { name: "Member", value: newMember.user.tag },
+                { name: "Old", value: oldMember.nickname || "None" },
+                { name: "New", value: newMember.nickname || "None" }
+            )
+            .setTimestamp();
+        await sendLog(newMember.guild, LOG_CHANNELS.NICKNAME, embed);
+    }
+});
+
 // Invite Tracker on Member Join
 client.on(Events.GuildMemberAdd, async (member) => {
     console.log(`[DEBUG] New member joined: ${member.user.tag} (${member.id})`);
@@ -464,7 +605,8 @@ client.on(Events.GuildMemberAdd, async (member) => {
             channel.send({ embeds: [embed] }).catch(() => {});
         }
     }
-    // Invite Tracker
+
+    // Invite Tracker with Logs
     if (LOG_CHANNELS.INVITE) {
         try {
             const guildInvites = await member.guild.invites.fetch();
@@ -507,35 +649,6 @@ client.on(Events.GuildMemberRemove, async (member) => {
     }
 });
 
-// Anti-Ping System
-client.on(Events.MessageCreate, async (message) => {
-    if (message.author.bot) return;
-    if (message.content.toLowerCase() === "!automsg") {
-        const autoEmbed = new EmbedBuilder()
-            .setTitle("Welcome to Midnight Society")
-            .setDescription("Enjoy your stay! Follow the rules and have fun.")
-            .setColor(0x2b2d31);
-        return message.channel.send({ embeds: [autoEmbed] });
-    }
-    let content = message.content;
-    let modified = false;
-    message.mentions.members.forEach(member => {
-        if (ANTI_PING_MEMBERS.has(member.id)) {
-            content = content.replace(new RegExp(`<@!?${member.id}>`, 'g'), "🛡️");
-            modified = true;
-        }
-    });
-    if (message.mentions.roles.has(ANTI_PING_ROLE_ID)) {
-        content = content.replace(new RegExp(`<@&${ANTI_PING_ROLE_ID}>`, 'g'), "🚫");
-        modified = true;
-    }
-    if (modified) {
-        await message.delete().catch(() => {});
-        await message.channel.send({ content: `${message.author} ${content}` });
-        return;
-    }
-});
-
 // Giveaway End Function
 async function endGiveaway(messageId) {
     const giveaway = activeGiveaways.get(messageId);
@@ -568,5 +681,5 @@ async function endGiveaway(messageId) {
     activeGiveaways.delete(messageId);
 }
 
-console.log("Bot is ready with Premium Ticket Panel + Anti-Ping + Invite Tracker!");
+console.log("Bot is ready with All Logs + Premium Ticket Panel + Advanced Anti-Ping + Invite Tracker!");
 client.login(TOKEN).catch(console.error);

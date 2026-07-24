@@ -74,10 +74,6 @@ const ANTI_PING_MEMBERS = new Set();
 const ANTI_PING_ROLE_ID = "890136671050424340";
 const antiPingAttempts = new Map(); // userId => {count, timestamp}
 
-// ================= J2C JOIN TO CREATE SYSTEM =================
-let JOIN_TO_CREATE_CHANNEL_ID = null;
-let userVoiceChannels = new Map(); // userId => channelId
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -158,22 +154,6 @@ const commands = [
     new SlashCommandBuilder().setName("antiping").setDescription("Manage anti-ping")
         .addStringOption(o => o.setName("action").setDescription("add/remove/list").setRequired(true))
         .addUserOption(o => o.setName("user").setDescription("User to add/remove").setRequired(false)),
-
-    // VC Commands
-    new SlashCommandBuilder().setName("vcsetup").setDescription("Setup Join to Create System (Admin Only)"),
-    new SlashCommandBuilder()
-        .setName("vc")
-        .setDescription("Manage your voice channel")
-        .addSubcommand(s => s.setName("name").setDescription("Change channel name").addStringOption(o => o.setName("name").setDescription("New name").setRequired(true)))
-        .addSubcommand(s => s.setName("limit").setDescription("Set user limit").addIntegerOption(o => o.setName("limit").setDescription("Max users").setRequired(true).setMinValue(0).setMaxValue(99)))
-        .addSubcommand(s => s.setName("lock").setDescription("Lock the channel"))
-        .addSubcommand(s => s.setName("unlock").setDescription("Unlock the channel"))
-        .addSubcommand(s => s.setName("hide").setDescription("Hide the channel"))
-        .addSubcommand(s => s.setName("unhide").setDescription("Unhide the channel"))
-        .addSubcommand(s => s.setName("kick").setDescription("Kick someone from your channel").addUserOption(o => o.setName("user").setDescription("User to kick").setRequired(true)))
-        .addSubcommand(s => s.setName("invite").setDescription("Invite someone to your channel").addUserOption(o => o.setName("user").setDescription("User to invite").setRequired(true)))
-        .addSubcommand(s => s.setName("claim").setDescription("Claim ownership of the channel")),
-
 ].map(cmd => cmd.toJSON());
 
 client.once(Events.ClientReady, async () => {
@@ -185,6 +165,8 @@ client.once(Events.ClientReady, async () => {
     } catch (err) {
         console.error(err);
     }
+
+    // Invite Tracker Setup
     const guild = client.guilds.cache.first();
     if (guild) {
         try {
@@ -195,10 +177,273 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// ================= PREFIX COMMANDS (ENGLISH) =================
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+// ================= INTERACTION HANDLER =================
+client.on("interactionCreate", async (interaction) => {
+    try {
+        if (interaction.isChatInputCommand()) {
+            const cmd = interaction.commandName;
 
+            if (cmd === "antiping") {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
+                    return interaction.reply({ content: "❌ Administrator permission required!", flags: MessageFlags.Ephemeral });
+                const action = interaction.options.getString("action");
+                const user = interaction.options.getUser("user");
+                if (action === "add" && user) {
+                    ANTI_PING_MEMBERS.add(user.id);
+                    return interaction.reply({ content: `✅ ${user.tag} added to anti-ping list.`, flags: MessageFlags.Ephemeral });
+                }
+                if (action === "remove" && user) {
+                    ANTI_PING_MEMBERS.delete(user.id);
+                    return interaction.reply({ content: `✅ ${user.tag} removed from anti-ping list.`, flags: MessageFlags.Ephemeral });
+                }
+                if (action === "list") {
+                    const list = ANTI_PING_MEMBERS.size > 0 ? Array.from(ANTI_PING_MEMBERS).map(id => `<@${id}>`).join("\n") : "Empty";
+                    return interaction.reply({ content: `**Anti-Ping Members:**\n${list}`, flags: MessageFlags.Ephemeral });
+                }
+                return interaction.reply({ content: "Invalid usage!", flags: MessageFlags.Ephemeral });
+            }
+
+            if (cmd === "ticketpanel") {
+                if (interaction.channelId !== PANEL_CHANNEL_ID)
+                    return interaction.reply({ content: "Wrong channel ♻️", flags: MessageFlags.Ephemeral });
+
+                const embed = new EmbedBuilder()
+                    .setTitle("Ticket Panel")
+                    .setColor(0x2b2d31)
+                    .setDescription("Experience the best Ticketing Service at Midnight Society! Choose the ticket type from the dropdown below, and our team will promptly assist you.")
+                    .setThumbnail(SMALL_IMAGE)
+                    .setImage(TICKET_IMAGE)
+                    .setFooter({ text: "© Midnight Society | All Rights Reserved." });
+
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId("ticket_select")
+                    .setPlaceholder("Choose the appropriate category")
+                    .addOptions(
+                        { label: "🌐 Other", value: "other" },
+                        { label: "🏆 Team Registration", value: "teamreg" }
+                    );
+
+                return interaction.reply({
+                    embeds: [embed],
+                    components: [new ActionRowBuilder().addComponents(select)]
+                });
+            }
+
+            if (cmd === "invites") {
+                const target = interaction.options.getMember("user") || interaction.member;
+                const embed = new EmbedBuilder()
+                    .setTitle(`📊 Invite Stats - ${target.user.tag}`)
+                    .setColor(0x2b2d31)
+                    .setDescription("Invite tracking is active.\nFull detailed stats coming soon.")
+                    .setThumbnail(target.user.displayAvatarURL({ dynamic: true }));
+                return interaction.reply({ embeds: [embed] });
+            }
+
+            if (cmd === "giveaway") {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
+                    return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
+                const prize = interaction.options.getString("prize");
+                const durationStr = interaction.options.getString("duration");
+                const winnersCount = interaction.options.getInteger("winners");
+                const durationMs = parseDuration(durationStr);
+                if (!durationMs) {
+                    return interaction.reply({ content: "❌ Invalid duration format! Use: 1m, 2h, 1d etc.", flags: MessageFlags.Ephemeral });
+                }
+                const embed = new EmbedBuilder()
+                    .setTitle("🎉 **GIVEAWAY** 🎉")
+                    .setColor("#00FF00")
+                    .setDescription(`**Prize:** ${prize}\n**Winners:** ${winnersCount}\n**Ends in:** ${durationStr}`)
+                    .setFooter({ text: `Hosted by ${interaction.user.tag}` })
+                    .setTimestamp();
+                const msg = await interaction.channel.send({ embeds: [embed] });
+                await msg.react("🎉");
+                const giveawayData = {
+                    messageId: msg.id,
+                    channelId: interaction.channel.id,
+                    prize: prize,
+                    winners: winnersCount,
+                    endTime: Date.now() + durationMs,
+                };
+                activeGiveaways.set(msg.id, giveawayData);
+                setTimeout(() => endGiveaway(msg.id), durationMs);
+                return interaction.reply({ content: "✅ Giveaway started!", flags: MessageFlags.Ephemeral });
+            }
+
+            if (cmd === "kick") {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.KickMembers))
+                    return interaction.reply({ content: "No Permission!", flags: MessageFlags.Ephemeral });
+                const target = interaction.options.getMember("user");
+                const reason = interaction.options.getString("reason") || "No reason";
+                await target.kick(reason);
+                const log = new EmbedBuilder().setColor("#FFA500").setTitle("Member Kicked").addFields({ name: "Target", value: target.user.tag }, { name: "Moderator", value: interaction.user.tag }, { name: "Reason", value: reason }).setTimestamp();
+                await sendLog(interaction.guild, LOG_CHANNELS.MOD, log);
+                return interaction.reply(`✅ Kicked ${target.user.tag}`);
+            }
+            // Baaki commands same
+        }
+
+        // MODAL, SELECT MENU, BUTTONS (same as before)
+        if (interaction.isModalSubmit()) {
+            if (interaction.customId.startsWith("modal_msg_")) {
+                const chanId = interaction.customId.replace("modal_msg_", "");
+                const content = interaction.fields.getTextInputValue("msg_content");
+                const channel = client.channels.cache.get(chanId);
+                if (!channel) return interaction.reply({ content: "Invalid Channel ID", flags: MessageFlags.Ephemeral });
+                const embed = new EmbedBuilder().setColor("#8B0000").setDescription(content);
+                await channel.send({ embeds: [embed] });
+                return interaction.reply({ content: "✅ Formatted message sent!", flags: MessageFlags.Ephemeral });
+            }
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const type = interaction.customId.replace("modal_", "");
+       
+            if (await hasOpenTicket(interaction.guild, interaction.user.id, type)) {
+                return interaction.editReply({ content: "❌ You already have an open ticket for this category!" });
+            }
+            const ticketChannel = await interaction.guild.channels.create({
+                name: `${EMOJIS[type] || "🏆"}-${interaction.user.username}`,
+                type: ChannelType.GuildText,
+                parent: CATEGORY_IDS[type] || CATEGORY_IDS.other,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: STAFF_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                ],
+            });
+            let fields = [];
+            if (type === "teamreg") {
+                const teamName = interaction.fields.getTextInputValue("team_name");
+                const discord = interaction.fields.getTextInputValue("players_discord");
+                const riot = interaction.fields.getTextInputValue("players_riot");
+                const rank = interaction.fields.getTextInputValue("players_rank");
+                fields = [
+                    { name: "Team Name", value: `\`\`\`${teamName}\`\`\`` },
+                    { name: "Player Discord Username", value: `\`\`\`${discord}\`\`\`` },
+                    { name: "Player Riot ID", value: `\`\`\`${riot}\`\`\`` },
+                    { name: "Player Ranks", value: `\`\`\`${rank}\`\`\`` }
+                ];
+            } else {
+                interaction.fields.fields.forEach(f => {
+                    fields.push({ name: f.customId.toUpperCase().replace(/_/g, " "), value: `\`\`\`${f.value || "N/A"}\`\`\`` });
+                });
+            }
+            const embed = new EmbedBuilder()
+                .setColor(0x2b2d31)
+                .setTitle(`Ticket - ${interaction.user.username}`)
+                .addFields(fields)
+                .setFooter({ text: `Opened by ${interaction.user.tag}` })
+                .setTimestamp();
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger)
+            );
+            await ticketChannel.send({
+                content: `<@${interaction.user.id}> <@&${STAFF_ROLE_ID}>\n\n**Your Ticket Is Opened, The Staff Team Will Assist You As Soon as Possible, Till Then Please Wait! <3**`,
+                embeds: [embed],
+                components: [row]
+            });
+            const log = new EmbedBuilder().setColor("#3498DB").setTitle("Ticket Created").addFields({ name: "User", value: interaction.user.tag }, { name: "Channel", value: `<#${ticketChannel.id}>` }, { name: "Type", value: type.toUpperCase() }).setTimestamp();
+            await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
+            return interaction.editReply(`Ticket Created: ${ticketChannel}`);
+        }
+
+        if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") {
+            const type = interaction.values[0];
+            const modal = new ModalBuilder().setCustomId(`modal_${type}`).setTitle(`${EMOJIS[type]} ${type.toUpperCase()} FORM`);
+            if (type === "teamreg") {
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("team_name").setLabel("Team Name").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("players_discord").setLabel("Players Discord Username").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("players_riot").setLabel("Players Riot ID").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("players_rank").setLabel("Players Ranks").setStyle(TextInputStyle.Short).setRequired(true))
+                );
+            } else {
+                modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("help").setLabel("How can we help?").setStyle(TextInputStyle.Paragraph).setRequired(true)));
+            }
+            return interaction.showModal(modal);
+        }
+
+        if (interaction.isButton()) {
+            if (interaction.customId === "claim") {
+                if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
+                    return interaction.reply({ content: "Staff Only!", flags: MessageFlags.Ephemeral });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const log = new EmbedBuilder().setColor("#2ECC71").setTitle("Ticket Claimed").addFields({ name: "Channel", value: interaction.channel.name }, { name: "Staff Member", value: interaction.user.tag }).setTimestamp();
+                await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
+                return interaction.editReply(`Ticket claimed by <@${interaction.user.id}>`);
+            }
+            if (interaction.customId === "close") {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const creator = await getTicketCreator(interaction.channel);
+                if (creator) {
+                    try {
+                        const messages = await interaction.channel.messages.fetch({ limit: 100 });
+                        let transcript = `Transcript for: ${interaction.channel.name}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+                        messages.reverse().forEach(m => {
+                            transcript += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`;
+                        });
+                        const buffer = Buffer.from(transcript, "utf-8");
+                        await creator.send({
+                            content: `📄 **Your Ticket Transcript** - ${interaction.channel.name}`,
+                            files: [{ attachment: buffer, name: `transcript-${interaction.channel.name}.txt` }]
+                        });
+                    } catch (e) {}
+                }
+                await interaction.channel.setParent(CLOSED_CATEGORY_ID).catch(() => {});
+                await interaction.channel.setName(`closed-${interaction.channel.name}`);
+                const log = new EmbedBuilder().setColor("#E74C3C").setTitle("Ticket Closed").addFields({ name: "Channel", value: interaction.channel.name }, { name: "Closed By", value: interaction.user.tag }).setTimestamp();
+                await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
+                const reopenRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId("reopen").setLabel("Reopen").setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId("delete").setLabel("Delete").setStyle(ButtonStyle.Danger)
+                );
+                return interaction.editReply({
+                    content: "Ticket Closed. ✅ Transcript sent to opener's DM.",
+                    components: [reopenRow]
+                });
+            }
+            if (interaction.customId === "reopen") {
+                if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
+                    return interaction.reply({ content: "Staff Only!", flags: MessageFlags.Ephemeral });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const originalName = interaction.channel.name.replace("closed-", "");
+                await interaction.channel.setName(originalName);
+                await interaction.channel.setParent(CATEGORY_IDS.other).catch(() => {});
+                const log = new EmbedBuilder().setColor("#2ECC71").setTitle("Ticket Reopened").addFields({ name: "Channel", value: interaction.channel.name }, { name: "Reopened By", value: interaction.user.tag }).setTimestamp();
+                await sendLog(interaction.guild, LOG_CHANNELS.TICKET, log);
+                return interaction.editReply("Ticket Reopened!");
+            }
+            if (interaction.customId === "delete") {
+                if (!interaction.member.roles.cache.has(STAFF_ROLE_ID))
+                    return interaction.reply({ content: "Staff Only!", flags: MessageFlags.Ephemeral });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const messages = await interaction.channel.messages.fetch({ limit: 100 });
+                let transcript = `Transcript for: ${interaction.channel.name}\nGenerated: ${new Date().toLocaleString()}\n\n`;
+                messages.reverse().forEach(m => {
+                    transcript += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`;
+                });
+                const buffer = Buffer.from(transcript, "utf-8");
+                const log = new EmbedBuilder().setColor("#000000").setTitle("Ticket Deleted").addFields({ name: "Channel", value: interaction.channel.name }, { name: "Deleted By", value: interaction.user.tag }).setTimestamp();
+                const ticketLogChan = interaction.guild.channels.cache.get(LOG_CHANNELS.TICKET);
+                if (ticketLogChan) {
+                    await ticketLogChan.send({
+                        embeds: [log],
+                        files: [{ attachment: buffer, name: `transcript-${interaction.channel.id}.txt` }]
+                    });
+                }
+                return interaction.channel.delete();
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+            interaction.reply({ content: "❌ Something went wrong!", flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+    }
+});
+
+// ================= IMPROVED ANTI-PING + SPAM PROTECTION =================
+client.on(Events.MessageCreate, async (message) => {
+    if (message.author.bot) return;
     if (message.content.toLowerCase() === "!automsg") {
         const autoEmbed = new EmbedBuilder()
             .setTitle("Welcome to Midnight Society")
@@ -207,180 +452,234 @@ client.on("messageCreate", async (message) => {
         return message.channel.send({ embeds: [autoEmbed] });
     }
 
-    if (!message.content.startsWith("!")) return;
+    let shouldBlock = false;
+    message.mentions.members.forEach(member => {
+        if (ANTI_PING_MEMBERS.has(member.id)) shouldBlock = true;
+    });
+    if (message.mentions.roles.has(ANTI_PING_ROLE_ID)) shouldBlock = true;
 
-    const args = message.content.slice(1).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
+    if (shouldBlock) {
+        const userId = message.author.id;
+        const now = Date.now();
+        if (!antiPingAttempts.has(userId)) {
+            antiPingAttempts.set(userId, { count: 0, timestamp: now });
+        }
+        const data = antiPingAttempts.get(userId);
+        if (now - data.timestamp > 60000) {
+            data.count = 0;
+            data.timestamp = now;
+        }
+        data.count += 1;
+        await message.delete().catch(() => {});
 
-    // VC Setup
-    if (command === "vcsetup") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Only Administrators can use this command!");
+        if (data.count >= 3) {
+            try {
+                await message.member.timeout(10 * 60000, "Anti-Ping Spam");
+                const log = new EmbedBuilder()
+                    .setColor("#FF0000")
+                    .setTitle("Anti-Ping Timeout")
+                    .addFields({ name: "User", value: message.author.tag }, { name: "Reason", value: "Protected member ping spam" })
+                    .setTimestamp();
+                await sendLog(message.guild, LOG_CHANNELS.MOD, log);
+            } catch (e) {}
+            antiPingAttempts.delete(userId);
+        } else {
+            const remaining = 3 - data.count;
+            await message.channel.send({
+                content: `${message.author}`,
+                embeds: [new EmbedBuilder()
+                    .setColor("#FFA500")
+                    .setDescription(`🚫 Protected staff ko ping mat karo!\n${remaining} try baaki. 3rd try par 10 min timeout.`)]
+            }).then(msg => setTimeout(() => msg.delete().catch(() => {}), 8000));
         }
-        try {
-            const guild = message.guild;
-            let category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE" && c.type === ChannelType.GuildCategory);
-            if (!category) {
-                category = await guild.channels.create({ name: "J2C JOIN TO CREATE", type: ChannelType.GuildCategory });
-            }
-            let j2cChannel = guild.channels.cache.find(c => c.name === "j2c" && c.parentId === category.id);
-            if (!j2cChannel) {
-                j2cChannel = await guild.channels.create({ name: "j2c", type: ChannelType.GuildVoice, parent: category.id });
-            }
-            JOIN_TO_CREATE_CHANNEL_ID = j2cChannel.id;
-            return message.reply("✅ **J2C Join to Create Setup Complete!**\nNow join the `j2c` channel to test.");
-        } catch (e) {
-            console.error(e);
-            return message.reply("❌ Setup failed! Give the bot **Manage Channels** permission.");
-        }
-    }
-
-    // VC Control Commands
-    if (command === "vc") {
-        const sub = args.shift()?.toLowerCase();
-        if (!sub) return message.reply("❌ Usage: `!vc name/limit/lock/unlock/hide/unhide/kick/invite/claim`");
-
-        const member = message.member;
-        let channelId = userVoiceChannels.get(member.id);
-        let channel = channelId ? message.guild.channels.cache.get(channelId) : null;
-
-        if (sub === "claim") {
-            const currentChannel = member.voice.channel;
-            if (!currentChannel) return message.reply("❌ You are not in a voice channel!");
-            userVoiceChannels.set(member.id, currentChannel.id);
-            await currentChannel.permissionOverwrites.edit(member.id, { ManageChannels: true });
-            return message.reply("✅ Channel claimed successfully!");
-        }
-
-        if (!channel) return message.reply("❌ You don't have a private voice channel!");
-
-        if (sub === "name") {
-            await channel.setName(args.join(" "));
-            return message.reply("✅ Channel name updated!");
-        }
-        if (sub === "limit") {
-            const limit = parseInt(args[0]) || 0;
-            await channel.setUserLimit(limit);
-            return message.reply(`✅ User limit set to ${limit}!`);
-        }
-        if (sub === "lock") {
-            await channel.permissionOverwrites.edit(message.guild.id, { Connect: false });
-            return message.reply("🔒 Channel has been locked!");
-        }
-        if (sub === "unlock") {
-            await channel.permissionOverwrites.edit(message.guild.id, { Connect: true });
-            return message.reply("🔓 Channel has been unlocked!");
-        }
-        if (sub === "hide") {
-            await channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
-            return message.reply("👁️ Channel has been hidden!");
-        }
-        if (sub === "unhide") {
-            await channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
-            return message.reply("👁️ Channel has been unhidden!");
-        }
-        if (sub === "kick") {
-            const target = message.mentions.members.first();
-            if (!target) return message.reply("❌ Please mention a user!");
-            if (target.voice.channel?.id === channel.id) {
-                await target.voice.disconnect();
-                return message.reply(`✅ Kicked ${target.user.tag} from your channel!`);
-            }
-            return message.reply("❌ User is not in your channel!");
-        }
-        if (sub === "invite") {
-            const target = message.mentions.members.first();
-            if (!target) return message.reply("❌ Please mention a user!");
-            await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: true });
-            return message.reply(`✅ Invited ${target.user.tag} to your channel!`);
-        }
+        return;
     }
 });
 
-// ================= INTERACTION HANDLER (Slash Commands) =================
-client.on("interactionCreate", async (interaction) => {
-    try {
-        if (interaction.isChatInputCommand()) {
-            const cmd = interaction.commandName;
-            // Your original slash command code goes here (ticketpanel, giveaway, etc.)
-            // Keep it as is
-        }
-
-        // Modal, Select Menu, Button handlers - keep your original code
-        if (interaction.isModalSubmit()) { /* your original code */ }
-        if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") { /* your original code */ }
-        if (interaction.isButton()) { /* your original code */ }
-
-    } catch (err) {
-        console.error(err);
-    }
+// ================= FULL LOGGING SYSTEM =================
+client.on(Events.MessageDelete, async (message) => {
+    if (message.author?.bot || !LOG_CHANNELS.MSG) return;
+    const embed = new EmbedBuilder()
+        .setColor("#FF0000")
+        .setTitle("Message Deleted")
+        .addFields(
+            { name: "Author", value: `${message.author.tag}` },
+            { name: "Channel", value: `<#${message.channel.id}>` },
+            { name: "Content", value: message.content?.slice(0, 1000) || "No Content" }
+        )
+        .setTimestamp();
+    await sendLog(message.guild, LOG_CHANNELS.MSG, embed);
 });
 
-// ================= FIXED JOIN TO CREATE =================
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+    if (oldMessage.author?.bot || !LOG_CHANNELS.MSG) return;
+    if (oldMessage.content === newMessage.content) return;
+    const embed = new EmbedBuilder()
+        .setColor("#FFA500")
+        .setTitle("Message Edited")
+        .addFields(
+            { name: "Author", value: `${oldMessage.author.tag}` },
+            { name: "Channel", value: `<#${oldMessage.channel.id}>` },
+            { name: "Before", value: oldMessage.content?.slice(0, 500) || "No Content" },
+            { name: "After", value: newMessage.content?.slice(0, 500) || "No Content" }
+        )
+        .setTimestamp();
+    await sendLog(oldMessage.guild, LOG_CHANNELS.MSG, embed);
+});
+
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    if (!LOG_CHANNELS.VC) return;
     const member = newState.member;
-    const guild = newState.guild;
+    if (oldState.channelId !== newState.channelId) {
+        let action = "";
+        if (!oldState.channelId) action = "Joined VC";
+        else if (!newState.channelId) action = "Left VC";
+        else action = "Switched VC";
 
-    if (LOG_CHANNELS.VC && oldState.channelId !== newState.channelId) {
-        let action = !oldState.channelId ? "Joined VC" : !newState.channelId ? "Left VC" : "Switched VC";
-        const embed = new EmbedBuilder().setColor("#00FFFF").setTitle("Voice Channel Update")
-            .addFields({ name: "Member", value: member.user.tag }, { name: "Action", value: action }).setTimestamp();
-        await sendLog(guild, LOG_CHANNELS.VC, embed);
+        const embed = new EmbedBuilder()
+            .setColor("#00FFFF")
+            .setTitle("Voice Channel Update")
+            .addFields(
+                { name: "Member", value: member.user.tag },
+                { name: "Action", value: action }
+            )
+            .setTimestamp();
+        await sendLog(newState.guild, LOG_CHANNELS.VC, embed);
+    }
+});
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    // Role Logs
+    if (LOG_CHANNELS.ROLE) {
+        const oldRoles = oldMember.roles.cache;
+        const newRoles = newMember.roles.cache;
+        const added = newRoles.filter(r => !oldRoles.has(r.id));
+        const removed = oldRoles.filter(r => !newRoles.has(r.id));
+
+        if (added.size || removed.size) {
+            const embed = new EmbedBuilder()
+                .setColor("#9B59B6")
+                .setTitle("Role Updated")
+                .addFields(
+                    { name: "Member", value: newMember.user.tag },
+                    { name: "Added", value: added.size ? added.map(r => r.name).join(", ") : "None" },
+                    { name: "Removed", value: removed.size ? removed.map(r => r.name).join(", ") : "None" }
+                )
+                .setTimestamp();
+            await sendLog(newMember.guild, LOG_CHANNELS.ROLE, embed);
+        }
     }
 
-    // Join to Create
-    if (JOIN_TO_CREATE_CHANNEL_ID && newState.channelId === JOIN_TO_CREATE_CHANNEL_ID && !oldState.channelId) {
+    // Nickname Logs
+    if (LOG_CHANNELS.NICKNAME && oldMember.nickname !== newMember.nickname) {
+        const embed = new EmbedBuilder()
+            .setColor("#F1C40F")
+            .setTitle("Nickname Changed")
+            .addFields(
+                { name: "Member", value: newMember.user.tag },
+                { name: "Old", value: oldMember.nickname || "None" },
+                { name: "New", value: newMember.nickname || "None" }
+            )
+            .setTimestamp();
+        await sendLog(newMember.guild, LOG_CHANNELS.NICKNAME, embed);
+    }
+});
+
+// Invite Tracker on Member Join
+client.on(Events.GuildMemberAdd, async (member) => {
+    console.log(`[DEBUG] New member joined: ${member.user.tag} (${member.id})`);
+    if (VERIFIED_ROLE_ID) {
+        await member.roles.add(VERIFIED_ROLE_ID).catch(() => {});
+    }
+    if (WELCOME_CHANNEL_ID) {
+        const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+        if (channel) {
+            const embed = new EmbedBuilder()
+                .setTitle("Welcome to Midnight Society | 2026!")
+                .setColor(0x8B00FF)
+                .setDescription(`Hey ${member}, glad you found us!\nWe are happy to welcome you to Midnight Society.`)
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setImage("https://cdn.discordapp.com/attachments/1525436919557914655/1525446030529794089/ChatGPT_Image_Jul_11_2026_03_17_45_PM.png?ex=6a5369d3&is=6a521853&hm=6c54f6174190b7ed868ff6c83a27a5a56c978c1e92fcc271242e2e2118bc909d&")
+                .setFooter({ text: "Midnight Society | 2026" })
+                .setTimestamp();
+            channel.send({ embeds: [embed] }).catch(() => {});
+        }
+    }
+
+    // Invite Tracker with Logs
+    if (LOG_CHANNELS.INVITE) {
         try {
-            const category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE");
-            const vc = await guild.channels.create({
-                name: `${member.displayName}'s Room`,
-                type: ChannelType.GuildVoice,
-                parent: category ? category.id : null,
-                permissionOverwrites: [
-                    { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.ManageChannels] }
-                ]
+            const guildInvites = await member.guild.invites.fetch();
+            let usedInvite = null;
+            let inviter = null;
+            guildInvites.forEach(invite => {
+                const oldUses = invites.get(invite.code) || 0;
+                if (invite.uses > oldUses) {
+                    usedInvite = invite;
+                    inviter = invite.inviter;
+                }
             });
-            userVoiceChannels.set(member.id, vc.id);
-            await member.voice.setChannel(vc);
-        } catch (e) { console.error(e); }
-    }
-
-    // Auto Delete when empty
-    if (oldState.channelId && !newState.channelId) {
-        const channelId = oldState.channelId;
-        if (userVoiceChannels.has(oldState.member.id) && userVoiceChannels.get(oldState.member.id) === channelId) {
-            const channel = guild.channels.cache.get(channelId);
-            if (channel && channel.members.size === 0) {
-                setTimeout(() => {
-                    if (channel && channel.members.size === 0) {
-                        channel.delete().catch(() => {});
-                        userVoiceChannels.delete(oldState.member.id);
-                    }
-                }, 5000);
+            if (usedInvite) {
+                invites.set(usedInvite.code, usedInvite.uses);
+                const logEmbed = new EmbedBuilder()
+                    .setTitle("📨 New Member via Invite")
+                    .setColor("#00FF00")
+                    .addFields(
+                        { name: "Member", value: `${member.user.tag} (${member.id})` },
+                        { name: "Inviter", value: inviter ? `${inviter.tag}` : "Unknown" },
+                        { name: "Invite Code", value: usedInvite.code }
+                    )
+                    .setTimestamp();
+                await sendLog(member.guild, LOG_CHANNELS.INVITE, logEmbed);
             }
+        } catch (e) {}
+    }
+});
+
+client.on(Events.GuildMemberRemove, async (member) => {
+    if (GOODBYE_CHANNEL_ID) {
+        const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL_ID);
+        if (channel) {
+            const embed = new EmbedBuilder()
+                .setTitle("Goodbye")
+                .setDescription(`${member.user.tag} left the server.`)
+                .setColor("#FF0000");
+            channel.send({ embeds: [embed] });
         }
     }
 });
 
-// ================= YOUR ORIGINAL EVENTS =================
-client.on(Events.MessageCreate, async (message) => {
-    if (message.author.bot) return;
-    // Your original anti-ping code here
-});
-
-client.on(Events.MessageDelete, async (message) => { /* your original code */ });
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => { /* your original code */ });
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => { /* your original code */ });
-client.on(Events.GuildMemberAdd, async (member) => { /* your original code */ });
-client.on(Events.GuildMemberRemove, async (member) => { /* your original code */ });
-
+// Giveaway End Function
 async function endGiveaway(messageId) {
     const giveaway = activeGiveaways.get(messageId);
     if (!giveaway) return;
-    // your original giveaway code
+    const channel = client.channels.cache.get(giveaway.channelId);
+    if (!channel) return;
+    try {
+        const msg = await channel.messages.fetch(messageId);
+        const reactions = msg.reactions.cache.get("🎉");
+        if (!reactions) return;
+        const users = await reactions.users.fetch();
+        let participants = users.filter(u => !u.bot).map(u => u.id);
+        if (participants.length === 0) {
+            return channel.send("❌ No one participated in the giveaway.");
+        }
+        let winners = [];
+        for (let i = 0; i < giveaway.winners; i++) {
+            if (participants.length === 0) break;
+            const winnerId = participants.splice(Math.floor(Math.random() * participants.length), 1)[0];
+            winners.push(`<@${winnerId}>`);
+        }
+        const embed = new EmbedBuilder()
+            .setTitle("🎉 Giveaway Ended!")
+            .setColor("#FF0000")
+            .setDescription(`**Prize:** ${giveaway.prize}\n**Winners:** ${winners.join(", ")}`);
+        channel.send({ embeds: [embed] });
+    } catch (e) {
+        console.log("Giveaway error");
+    }
     activeGiveaways.delete(messageId);
 }
 
-console.log("Bot is ready with Full Working J2C System!");
+console.log("Bot is ready with All Logs + Premium Ticket Panel + Advanced Anti-Ping + Invite Tracker!");
 client.login(TOKEN).catch(console.error);

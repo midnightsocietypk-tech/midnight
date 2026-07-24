@@ -208,16 +208,17 @@ client.on("interactionCreate", async (interaction) => {
                 try {
                     const guild = interaction.guild;
                     let category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE" && c.type === ChannelType.GuildCategory);
-                    if (!category) category = await guild.channels.create({ name: "J2C JOIN TO CREATE", type: ChannelType.GuildCategory });
-
+                    if (!category) {
+                        category = await guild.channels.create({ name: "J2C JOIN TO CREATE", type: ChannelType.GuildCategory });
+                    }
                     let j2cChannel = guild.channels.cache.find(c => c.name === "j2c" && c.parentId === category.id);
                     if (!j2cChannel) {
                         j2cChannel = await guild.channels.create({ name: "j2c", type: ChannelType.GuildVoice, parent: category.id });
                     }
                     JOIN_TO_CREATE_CHANNEL_ID = j2cChannel.id;
-                    await interaction.editReply({ content: "✅ J2C Setup Complete! Ab j2c mein join karke test karo." });
+                    await interaction.editReply({ content: "✅ J2C Setup Complete!" });
                 } catch (e) {
-                    await interaction.editReply({ content: "❌ Setup failed. Bot ko Manage Channels permission do." });
+                    await interaction.editReply({ content: "❌ Setup failed!" });
                 }
                 return;
             }
@@ -277,69 +278,67 @@ client.on("interactionCreate", async (interaction) => {
                 }
             }
 
-            // Purane saare commands (bilkul same)
-            if (cmd === "antiping") { /* purana code */ }
-            if (cmd === "ticketpanel") { /* purana code */ }
-            if (cmd === "invites") { /* purana code */ }
-            if (cmd === "giveaway") { /* purana code */ }
-            if (cmd === "kick") { /* purana code */ }
+            // Purane Commands
+            if (cmd === "antiping") { /* aapka purana code */ }
+            if (cmd === "ticketpanel") { /* aapka purana code */ }
+            if (cmd === "invites") { /* aapka purana code */ }
+            if (cmd === "giveaway") { /* aapka purana code */ }
+            if (cmd === "kick") { /* aapka purana code */ }
         }
 
-        // Modal, Select Menu, Buttons (pura purana)
-        if (interaction.isModalSubmit()) { /* purana code */ }
-        if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") { /* purana code */ }
-        if (interaction.isButton()) { /* purana code */ }
+        // Modal, Select, Button - pura purana
+        if (interaction.isModalSubmit()) { /* aapka purana code */ }
+        if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") { /* aapka purana code */ }
+        if (interaction.isButton()) { /* aapka purana code */ }
 
     } catch (err) {
         console.error(err);
     }
 });
 
-// ================= JOIN TO CREATE LOGIC =================
+// ================= FIXED JOIN TO CREATE =================
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-    if (LOG_CHANNELS.VC) {
-        const member = newState.member;
-        if (oldState.channelId !== newState.channelId) {
-            let action = "";
-            if (!oldState.channelId) action = "Joined VC";
-            else if (!newState.channelId) action = "Left VC";
-            else action = "Switched VC";
-            const embed = new EmbedBuilder()
-                .setColor("#00FFFF")
-                .setTitle("Voice Channel Update")
-                .addFields({ name: "Member", value: member.user.tag }, { name: "Action", value: action })
-                .setTimestamp();
-            await sendLog(newState.guild, LOG_CHANNELS.VC, embed);
-        }
+    const member = newState.member;
+    const guild = newState.guild;
+
+    if (LOG_CHANNELS.VC && oldState.channelId !== newState.channelId) {
+        let action = !oldState.channelId ? "Joined VC" : !newState.channelId ? "Left VC" : "Switched VC";
+        const embed = new EmbedBuilder().setColor("#00FFFF").setTitle("Voice Channel Update")
+            .addFields({ name: "Member", value: member.user.tag }, { name: "Action", value: action }).setTimestamp();
+        await sendLog(guild, LOG_CHANNELS.VC, embed);
     }
 
-    // Join to Create (Improved)
+    // Join to Create
     if (JOIN_TO_CREATE_CHANNEL_ID && newState.channelId === JOIN_TO_CREATE_CHANNEL_ID && !oldState.channelId) {
         try {
-            const guild = newState.guild;
             const category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE");
             const vc = await guild.channels.create({
-                name: `${newState.member.displayName}'s Room`,
+                name: `${member.displayName}'s Room`,
                 type: ChannelType.GuildVoice,
                 parent: category ? category.id : null,
                 permissionOverwrites: [
                     { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: newState.member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.ManageChannels] }
+                    { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.ManageChannels] }
                 ]
             });
-            userVoiceChannels.set(newState.member.id, vc.id);
-            await newState.member.voice.setChannel(vc);
+
+            userVoiceChannels.set(member.id, vc.id);
+            await member.voice.setChannel(vc);
         } catch (e) { console.error(e); }
     }
 
-    // Auto delete
+    // Auto Delete when empty
     if (oldState.channelId && !newState.channelId) {
         const channelId = oldState.channelId;
         if (userVoiceChannels.has(oldState.member.id) && userVoiceChannels.get(oldState.member.id) === channelId) {
-            const channel = oldState.guild.channels.cache.get(channelId);
+            const channel = guild.channels.cache.get(channelId);
             if (channel && channel.members.size === 0) {
-                channel.delete().catch(() => {});
-                userVoiceChannels.delete(oldState.member.id);
+                setTimeout(() => {
+                    if (channel && channel.members.size === 0) {
+                        channel.delete().catch(() => {});
+                        userVoiceChannels.delete(oldState.member.id);
+                    }
+                }, 3000);
             }
         }
     }
@@ -355,7 +354,7 @@ client.on(Events.MessageCreate, async (message) => {
             .setColor(0x2b2d31);
         return message.channel.send({ embeds: [autoEmbed] });
     }
-    // Anti-ping (pura)
+    // Anti-ping pura
     let shouldBlock = false;
     message.mentions.members.forEach(member => {
         if (ANTI_PING_MEMBERS.has(member.id)) shouldBlock = true;
@@ -381,18 +380,18 @@ client.on(Events.MessageCreate, async (message) => {
     }
 });
 
-client.on(Events.MessageDelete, async (message) => { /* pura purana code paste kar do */ });
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => { /* pura purana code */ });
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => { /* pura purana code */ });
-client.on(Events.GuildMemberAdd, async (member) => { /* pura purana code */ });
-client.on(Events.GuildMemberRemove, async (member) => { /* pura purana code */ });
+client.on(Events.MessageDelete, async (message) => { /* aapka purana code */ });
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => { /* aapka purana code */ });
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => { /* aapka purana code */ });
+client.on(Events.GuildMemberAdd, async (member) => { /* aapka purana code */ });
+client.on(Events.GuildMemberRemove, async (member) => { /* aapka purana code */ });
 
 async function endGiveaway(messageId) {
     const giveaway = activeGiveaways.get(messageId);
     if (!giveaway) return;
-    // pura purana code
+    // aapka purana code
     activeGiveaways.delete(messageId);
 }
 
-console.log("Bot is ready with All Logs + Premium Ticket Panel + Advanced Anti-Ping + Invite Tracker + J2C Join to Create!");
+console.log("Bot is ready with Fixed Join to Create System!");
 client.login(TOKEN).catch(console.error);

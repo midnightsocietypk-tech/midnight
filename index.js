@@ -195,7 +195,7 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// ================= PREFIX COMMANDS FOR VC =================
+// ================= PREFIX COMMANDS (ENGLISH) =================
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
@@ -207,68 +207,113 @@ client.on("messageCreate", async (message) => {
         return message.channel.send({ embeds: [autoEmbed] });
     }
 
-    if (message.content.startsWith("!vc")) {
-        const args = message.content.slice(4).trim().split(/ +/);
-        const command = args.shift().toLowerCase();
+    if (!message.content.startsWith("!")) return;
 
-        if (command === "setup") {
-            if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("❌ Admin only!");
-            // vcsetup logic
-            try {
-                const guild = message.guild;
-                let category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE" && c.type === ChannelType.GuildCategory);
-                if (!category) category = await guild.channels.create({ name: "J2C JOIN TO CREATE", type: ChannelType.GuildCategory });
+    const args = message.content.slice(1).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
 
-                let j2cChannel = guild.channels.cache.find(c => c.name === "j2c" && c.parentId === category.id);
-                if (!j2cChannel) {
-                    j2cChannel = await guild.channels.create({ name: "j2c", type: ChannelType.GuildVoice, parent: category.id });
-                }
-                JOIN_TO_CREATE_CHANNEL_ID = j2cChannel.id;
-                return message.reply("✅ J2C Setup Complete! Ab `j2c` mein join karke test karo.");
-            } catch (e) {
-                return message.reply("❌ Setup failed!");
-            }
+    // VC Setup
+    if (command === "vcsetup") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ Only Administrators can use this command!");
         }
+        try {
+            const guild = message.guild;
+            let category = guild.channels.cache.find(c => c.name === "J2C JOIN TO CREATE" && c.type === ChannelType.GuildCategory);
+            if (!category) {
+                category = await guild.channels.create({ name: "J2C JOIN TO CREATE", type: ChannelType.GuildCategory });
+            }
+            let j2cChannel = guild.channels.cache.find(c => c.name === "j2c" && c.parentId === category.id);
+            if (!j2cChannel) {
+                j2cChannel = await guild.channels.create({ name: "j2c", type: ChannelType.GuildVoice, parent: category.id });
+            }
+            JOIN_TO_CREATE_CHANNEL_ID = j2cChannel.id;
+            return message.reply("✅ **J2C Join to Create Setup Complete!**\nNow join the `j2c` channel to test.");
+        } catch (e) {
+            console.error(e);
+            return message.reply("❌ Setup failed! Give the bot **Manage Channels** permission.");
+        }
+    }
 
-        // Other !vc commands (name, lock etc.)
+    // VC Control Commands
+    if (command === "vc") {
+        const sub = args.shift()?.toLowerCase();
+        if (!sub) return message.reply("❌ Usage: `!vc name/limit/lock/unlock/hide/unhide/kick/invite/claim`");
+
         const member = message.member;
         let channelId = userVoiceChannels.get(member.id);
         let channel = channelId ? message.guild.channels.cache.get(channelId) : null;
 
-        if (!channel) return message.reply("❌ Aapka private VC nahi mila!");
+        if (sub === "claim") {
+            const currentChannel = member.voice.channel;
+            if (!currentChannel) return message.reply("❌ You are not in a voice channel!");
+            userVoiceChannels.set(member.id, currentChannel.id);
+            await currentChannel.permissionOverwrites.edit(member.id, { ManageChannels: true });
+            return message.reply("✅ Channel claimed successfully!");
+        }
 
-        if (command === "name") {
+        if (!channel) return message.reply("❌ You don't have a private voice channel!");
+
+        if (sub === "name") {
             await channel.setName(args.join(" "));
-            return message.reply("✅ Name updated!");
+            return message.reply("✅ Channel name updated!");
         }
-        if (command === "limit") {
-            await channel.setUserLimit(parseInt(args[0]) || 0);
-            return message.reply("✅ Limit set!");
+        if (sub === "limit") {
+            const limit = parseInt(args[0]) || 0;
+            await channel.setUserLimit(limit);
+            return message.reply(`✅ User limit set to ${limit}!`);
         }
-        if (command === "lock") {
+        if (sub === "lock") {
             await channel.permissionOverwrites.edit(message.guild.id, { Connect: false });
-            return message.reply("🔒 Channel Locked!");
+            return message.reply("🔒 Channel has been locked!");
         }
-        if (command === "unlock") {
+        if (sub === "unlock") {
             await channel.permissionOverwrites.edit(message.guild.id, { Connect: true });
-            return message.reply("🔓 Channel Unlocked!");
+            return message.reply("🔓 Channel has been unlocked!");
         }
-        if (command === "hide") {
+        if (sub === "hide") {
             await channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
-            return message.reply("👁️ Channel Hidden!");
+            return message.reply("👁️ Channel has been hidden!");
         }
-        if (command === "unhide") {
+        if (sub === "unhide") {
             await channel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
-            return message.reply("👁️ Channel Unhidden!");
+            return message.reply("👁️ Channel has been unhidden!");
         }
-        // kick, invite etc. bhi add kar sakte ho
+        if (sub === "kick") {
+            const target = message.mentions.members.first();
+            if (!target) return message.reply("❌ Please mention a user!");
+            if (target.voice.channel?.id === channel.id) {
+                await target.voice.disconnect();
+                return message.reply(`✅ Kicked ${target.user.tag} from your channel!`);
+            }
+            return message.reply("❌ User is not in your channel!");
+        }
+        if (sub === "invite") {
+            const target = message.mentions.members.first();
+            if (!target) return message.reply("❌ Please mention a user!");
+            await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: true });
+            return message.reply(`✅ Invited ${target.user.tag} to your channel!`);
+        }
     }
 });
 
-// ================= INTERACTION HANDLER (Slash) =================
+// ================= INTERACTION HANDLER (Slash Commands) =================
 client.on("interactionCreate", async (interaction) => {
-    // aapka pura interaction code yahan paste kar do (vcsetup, vc, ticketpanel etc.)
-    // main space ke liye skip kar raha hun, aap copy paste kar lena
+    try {
+        if (interaction.isChatInputCommand()) {
+            const cmd = interaction.commandName;
+            // Your original slash command code goes here (ticketpanel, giveaway, etc.)
+            // Keep it as is
+        }
+
+        // Modal, Select Menu, Button handlers - keep your original code
+        if (interaction.isModalSubmit()) { /* your original code */ }
+        if (interaction.isStringSelectMenu() && interaction.customId === "ticket_select") { /* your original code */ }
+        if (interaction.isButton()) { /* your original code */ }
+
+    } catch (err) {
+        console.error(err);
+    }
 });
 
 // ================= FIXED JOIN TO CREATE =================
@@ -301,7 +346,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         } catch (e) { console.error(e); }
     }
 
-    // Auto Delete
+    // Auto Delete when empty
     if (oldState.channelId && !newState.channelId) {
         const channelId = oldState.channelId;
         if (userVoiceChannels.has(oldState.member.id) && userVoiceChannels.get(oldState.member.id) === channelId) {
@@ -318,24 +363,24 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
 });
 
-// ================= PURA PURANA CODE (MessageCreate, Logs, Ticket etc.) =================
+// ================= YOUR ORIGINAL EVENTS =================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
-    // aapka pura anti-ping aur !automsg code
+    // Your original anti-ping code here
 });
 
-client.on(Events.MessageDelete, async (message) => { /* aapka purana code */ });
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => { /* aapka purana code */ });
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => { /* aapka purana code */ });
-client.on(Events.GuildMemberAdd, async (member) => { /* aapka purana code */ });
-client.on(Events.GuildMemberRemove, async (member) => { /* aapka purana code */ });
+client.on(Events.MessageDelete, async (message) => { /* your original code */ });
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => { /* your original code */ });
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => { /* your original code */ });
+client.on(Events.GuildMemberAdd, async (member) => { /* your original code */ });
+client.on(Events.GuildMemberRemove, async (member) => { /* your original code */ });
 
 async function endGiveaway(messageId) {
     const giveaway = activeGiveaways.get(messageId);
     if (!giveaway) return;
-    // aapka purana code
+    // your original giveaway code
     activeGiveaways.delete(messageId);
 }
 
-console.log("Bot is ready with Full Working J2C + Prefix Commands!");
+console.log("Bot is ready with Full Working J2C System!");
 client.login(TOKEN).catch(console.error);
